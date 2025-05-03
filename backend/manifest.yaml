@@ -1,0 +1,59 @@
+# ConfigMap: used to store environment variables for the backend container
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend
+  namespace: expense
+data:
+  DB_HOST: mysql # This should match the service name of the MySQL DB (backend will connect to this host)
+
+---
+
+# Deployment: launches and manages the backend application pods
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: expense
+  labels:                       # Deployment-level labels
+    component: backend
+    project: expense
+    tier: app
+spec:
+  replicas: 2                   # 2 backend pods will be created
+  selector:                     # Must match the pod template labels exactly
+    matchLabels:
+      component: backend
+      project: expense
+      tier: app
+  template:
+    metadata:
+      labels:                   # Pod labels — must match service selector
+        component: backend
+        project: expense
+        tier: app
+    spec:
+      containers:
+        - name: backend
+          image: joindevops/backend:v1.0 # Docker image for the backend application
+          envFrom:
+            - configMapRef:
+                name: backend           # Injects all key-values from ConfigMap as env variables
+
+---
+
+# Service: exposes the backend pods internally for other services (e.g., frontend) to access
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: expense
+spec:
+  selector:                        # Must match backend pod labels
+    component: backend
+    project: expense
+    tier: app
+  ports:
+    - protocol: TCP
+      port: 8080                   # Service port — used by frontend to talk to backend
+      targetPort: 8080             # Container port exposed by backend pods

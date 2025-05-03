@@ -1,0 +1,122 @@
+# ConfigMap that stores a custom nginx.conf file
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend
+  namespace: expense
+data:
+  nginx.conf: |
+    user www-data;
+    worker_processes 4;
+    pid /var/run/nginx.pid;
+
+    events {
+      worker_connections 768;
+    }
+
+    http {
+      sendfile on;
+      tcp_nopush on;
+      tcp_nodelay on;
+      keepalive_timeout 65;
+      types_hash_max_size 2048;
+      large_client_header_buffers 6 32k;
+      client_max_body_size 100m;
+
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+
+      access_log /var/log/nginx/access.log;
+      error_log /var/log/nginx/error.log debug; # change to warn or error for production
+
+      gzip on;
+      gzip_disable "msie6";
+
+      include /etc/nginx/conf.d/*.conf;
+      include /etc/nginx/sites-enabled/*;
+
+      server {
+        listen       8080;
+        server_name  localhost;
+        proxy_http_version 1.1;
+
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+            ssi    on;
+        }
+
+        location /images/ {
+            expires 5s;
+            root   /usr/share/nginx/html;
+            try_files $uri /images/placeholder.png;
+        }
+
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   /usr/share/nginx/html;
+        }
+
+        location /api/ { 
+            proxy_pass http://backend:8080/;
+        }
+      }
+    }
+---
+# Deployment to manage frontend pods running custom Nginx configuration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: expense
+  labels:
+    component: frontend
+    project: expense
+    tier: web
+spec:
+  replicas: 2  # Two replicas for load balancing
+  selector:
+    matchLabels:
+      component: frontend  # must match pod labels
+      project: expense
+      tier: web
+  template:
+    metadata:
+      labels:
+        component: frontend  # these labels must match service selectors and deployment selector
+        project: expense
+        tier: web
+    spec:
+      containers:
+        - name: frontend
+          image: darauday0/expense-frontend:v1  # custom frontend image
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf  # mounting the config directly to nginx config path
+              subPath: nginx.conf               # required when mounting a single file from ConfigMap
+              readOnly: true
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: frontend                     # matches the ConfigMap name defined above
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+---
+# Service to expose the frontend deployment using LoadBalancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: expense
+spec:
+  type: LoadBalancer                         # used to expose this service to the internet
+  selector:
+    component: frontend                      # must match the pod template labels
+    project: expense
+    tier: web
+  ports:
+    - protocol: TCP
+      port: 80                               # service port exposed to clients
+      targetPort: 8080                       # container port used in the nginx.conf server block
