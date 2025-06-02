@@ -35,7 +35,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: joindevops/backend:v1.0 # Docker image for the backend application
+          image: darauday0/expense-backend:v1 # Docker image for the backend application
           envFrom:
             - configMapRef:
                 name: backend           # Injects all key-values from ConfigMap as env variables
